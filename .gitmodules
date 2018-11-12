@@ -1,0 +1,3 @@
+[submodule "nix-utils"]
+	path = nix-utils
+	url = https://github.com/antislava/nix-utils

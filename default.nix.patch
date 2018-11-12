@@ -1,0 +1,4 @@
+4c4
+< with import ./.obelisk/impl { inherit system iosSdkVersion; };
+---
+> with import (import ./nix/obelisk.nix) { inherit system iosSdkVersion; };
