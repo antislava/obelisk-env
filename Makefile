@@ -5,6 +5,7 @@ NIX-DIR = ./nix
 NIXPKGS = $(NIX-DIR)/nixpkgs.git.json
 OBELISK = $(NIX-DIR)/obelisk.git.json
 OBELISK-NIX = $(NIX-DIR)/obelisk.nix
+HDEPS   = ./.haskdeps
 # TARGETS = "ps: [ ]"
 
 # DEFAULT
@@ -49,8 +50,8 @@ ob-install-local : $(OBELISK) $(OBELISK-NIX)
 
 .PHONY : shell-tools
 shell-tools : $(OBELISK) $(OBELISK-NIX)
-	nix-shell -p "(import (import ./nix/obelisk.nix) { }).command" 
-	"haskellPackages.ghcWithPackages (ps: [ ps.fast-tags ])"
+	# nix-shell -p "(import (import ./nix/obelisk.nix) { }).command" "haskellPackages.ghcWithPackages (ps: [ ps.fast-tags ])"
+	nix-shell -p "haskellPackages.ghcWithPackages (ps: [ ps.fast-tags ])"
 
 
 # Small changes in default.nix...
@@ -69,8 +70,8 @@ patches :
 shell-ghc :
 ifndef NIX_GHC
 	# @touch nix-shell-check
-	mkdir -p .haskdeps
-	nix-shell -A shells.ghc --command "ghc-pkg list | head -1 | xargs | xargs -I {} ln -sf -T {} .haskdeps/package.conf.d.ghc; ls -1 .haskdeps/package.conf.d.ghc | sort > .haskdeps/package.conf.d.ghc.txt; ghc-pkg list --simple-output | tr ' ' '\n' | sort > .haskdeps/ghc-all.txt; return"
+	mkdir -p $(HDEPS)
+	nix-shell -A shells.ghc --command "ghc-pkg list | head -1 | xargs | xargs -I {} ln -sf -T {} $(HDEPS)/package.conf.d.ghc; ls -1 $(HDEPS)/package.conf.d.ghc | sort > $(HDEPS)/package.conf.d.ghc.txt; ghc-pkg list --simple-output | tr ' ' '\n' | sort > $(HDEPS)/ghc-all.txt; return"
 else
 	$(error Already in GHC shell!)
 endif
@@ -80,8 +81,8 @@ endif
 shell-ghcjs :
 ifndef NIX_GHCJS
 	# @touch nix-shell-check
-	mkdir -p .haskdeps
-	nix-shell -A shells.ghcjs --command "ghcjs-pkg list | head -1 | xargs | xargs -I {} ln -sf {} .haskdeps/package.conf.d.ghcjs; ls -1 .haskdeps/package.conf.d.ghcjs | sort > .haskdeps/package.conf.d.ghcjs.txt; ghcjs-pkg list --simple-output | tr ' ' '\n' | sort > .haskdeps/ghcjs-all.txt; return"
+	mkdir -p $(HDEPS)
+	nix-shell -A shells.ghcjs --command "ghcjs-pkg list | head -1 | xargs | xargs -I {} ln -sf {} $(HDEPS)/package.conf.d.ghcjs; ls -1 $(HDEPS)/package.conf.d.ghcjs | sort > $(HDEPS)/package.conf.d.ghcjs.txt; ghcjs-pkg list --simple-output | tr ' ' '\n' | sort > $(HDEPS)/ghcjs-all.txt; return"
 else
 	$(error Already in GHCJS shell!)
 endif
@@ -98,9 +99,14 @@ endif
 .FORCE:
 
 # hasktags seems to have problems because of lazy IO. Switched to fast-tags
-tags : .FORCE haskdeps .haskdeps/core
+tags : .FORCE haskdeps $(HDEPS)/core
 ifdef FAST_TAGS_VER
-	fast-tags -RL . ./.haskdeps/ghc ./.haskdeps/ghcjs -o tags
+	mkdir -p $(HDEPS)/all
+	mkdir -p $(HDEPS)/ghc
+	mkdir -p $(HDEPS)/ghcjs
+	cp -d $(HDEPS)/ghc/*   $(HDEPS)/all
+	cp -d $(HDEPS)/ghcjs/* $(HDEPS)/all
+	fast-tags -RL . $(HDEPS)/all -o tags
 else
 	$(error fast-tags not installed! Are you in the right shell?)
 endif
@@ -108,33 +114,33 @@ endif
 # NOTE:
 # Currently generating two directories for ghc and ghcjs, which greatly overlap, resulting in many redundancies in tags file!
 haskdeps :
-	nix-build nix/sources.nix -A sources -o .haskdeps/ghc --argstr compiler "ghc" --arg targets "ps: [ ps.common ps.frontend ps.backend ]"
-	nix-build nix/sources.nix -A sources -o .haskdeps/ghcjs --argstr compiler "ghcjs" --arg targets "ps: [ ps.common ps.frontend ]"
+	nix-build nix/sources.nix -A sources -o $(HDEPS)/ghc --argstr compiler "ghc" --arg targets "ps: [ ps.common ps.frontend ps.backend ]"
+	nix-build nix/sources.nix -A sources -o $(HDEPS)/ghcjs --argstr compiler "ghcjs" --arg targets "ps: [ ps.common ps.frontend ]"
 # make doesn't like <(...) too much...
-	ls -1 .haskdeps/ghc   > .haskdeps/ghc.txt
-	ls -1 .haskdeps/ghcjs > .haskdeps/ghcjs.txt
-	comm -2 -3 .haskdeps/ghc-all.txt   .haskdeps/ghc.txt   > .haskdeps/ghc-core.txt
-	comm -2 -3 .haskdeps/ghcjs-all.txt .haskdeps/ghcjs.txt > .haskdeps/ghcjs-core.txt
+	ls -1 $(HDEPS)/ghc   > $(HDEPS)/ghc.txt
+	ls -1 $(HDEPS)/ghcjs > $(HDEPS)/ghcjs.txt
+	comm -2 -3 $(HDEPS)/ghc-all.txt   $(HDEPS)/ghc.txt   > $(HDEPS)/ghc-core.txt
+	comm -2 -3 $(HDEPS)/ghcjs-all.txt $(HDEPS)/ghcjs.txt > $(HDEPS)/ghcjs-core.txt
 
-.haskdeps/core :
-	rm -rf .haskdeps/core
-	mkdir  .haskdeps/core
-	cat .haskdeps/ghc-core.txt .haskdeps/ghcjs-core.txt | sort | uniq | xargs -I P sh -c 'cabal get P -d /cabal-cache; ln -s /cabal-cache/P ./.haskdeps/core'
+$(HDEPS)/core :
+	rm -rf $(HDEPS)/core
+	mkdir  $(HDEPS)/core
+	cat $(HDEPS)/ghc-core.txt $(HDEPS)/ghcjs-core.txt | sort | uniq | xargs -I P sh -c 'cabal get P -d /cabal-cache; ln -s /cabal-cache/P $(HDEPS)/core'
 
-# .haskdeps/ghc-core :
+# $(HDEPS)/ghc-core :
 # ifdef NIX_GHC
-# 	rm -rf .haskdeps/ghc-core
-# 	mkdir  .haskdeps/ghc-core
-# 	cat .haskdeps/ghc-core.txt | xargs -I P sh -c 'cabal get P -d /cabal-cache; ln -s /cabal-cache/P ./.haskdeps/ghc-core'
+# 	rm -rf $(HDEPS)/ghc-core
+# 	mkdir  $(HDEPS)/ghc-core
+# 	cat $(HDEPS)/ghc-core.txt | xargs -I P sh -c 'cabal get P -d /cabal-cache; ln -s /cabal-cache/P $(HDEPS)/ghc-core'
 # else
 # 	$(error Not in GHC shell!)
 # endif
 
-# .haskdeps/ghcjs-core :
+# $(HDEPS)/ghcjs-core :
 # ifdef NIX_GHCJS
-# 	rm -rf .haskdeps/ghcjs-core
-# 	mkdir  .haskdeps/ghcjs-core
-# 	cat .haskdeps/ghcjs-core.txt | xargs -I P sh -c 'cabal get P -d /cabal-cache; ln -s /cabal-cache/P ./.haskdeps/ghcjs-core'
+# 	rm -rf $(HDEPS)/ghcjs-core
+# 	mkdir  $(HDEPS)/ghcjs-core
+# 	cat $(HDEPS)/ghcjs-core.txt | xargs -I P sh -c 'cabal get P -d /cabal-cache; ln -s /cabal-cache/P $(HDEPS)/ghcjs-core'
 # else
 # 	$(error Not in GHCJS shell!)
 # endif
@@ -154,7 +160,7 @@ clean-build :
 .PHONY: clean-tags
 clean-tags :
 	rm -f  tags
-	rm -rf .haskdeps
+	rm -rf $(HDEPS)
 
 .PHONY: clean-tmp
 clean-tmp :
