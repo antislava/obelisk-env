@@ -8,6 +8,12 @@ OBELISK-NIX = $(NIX-DIR)/obelisk.nix
 HDEPS   = ./.haskdeps
 # TARGETS = "ps: [ ]"
 
+INIT-GHC   = "ghc-pkg list | head -1 | xargs | xargs -I {} ln -sf -T {} $(HDEPS)/package.conf.d.ghc; ls -1 $(HDEPS)/package.conf.d.ghc | sort > $(HDEPS)/package.conf.d.ghc.txt; ghc-pkg list --simple-output | tr ' ' '\n' | sort > $(HDEPS)/ghc-all.txt"
+INIT-GHCJS = "ghcjs-pkg list | head -1 | xargs | xargs -I {} ln -sf {} $(HDEPS)/package.conf.d.ghcjs; ls -1 $(HDEPS)/package.conf.d.ghcjs | sort > $(HDEPS)/package.conf.d.ghcjs.txt; ghcjs-pkg list --simple-output | tr ' ' '\n' | sort > $(HDEPS)/ghcjs-all.txt"
+
+INIT-GHC-RET   = $(INIT-GHC)"; return"
+INIT-GHCJS-RET = $(INIT-GHC)"; return"
+
 # DEFAULT
 .PHONY : default
 default:
@@ -65,13 +71,17 @@ patches :
 # Not used but keeping it for the future
 # assert-ghc-shell := $(shell if [ -z $(NIX_GHC) ]; then echo "GHC is not installed. Enter nix-shell script (e.g. make shell)"; exit 1; fi;)
 
+shells-init :
+	nix-shell -A shells.ghc   --run $(INIT-GHC)
+	nix-shell -A shells.ghcjs --run $(INIT-GHCJS)
+
 .PHONY : shell-ghc
 # shell-ghc : nix-shell-check
 shell-ghc :
 ifndef NIX_GHC
 	# @touch nix-shell-check
 	mkdir -p $(HDEPS)
-	nix-shell -A shells.ghc --command "ghc-pkg list | head -1 | xargs | xargs -I {} ln -sf -T {} $(HDEPS)/package.conf.d.ghc; ls -1 $(HDEPS)/package.conf.d.ghc | sort > $(HDEPS)/package.conf.d.ghc.txt; ghc-pkg list --simple-output | tr ' ' '\n' | sort > $(HDEPS)/ghc-all.txt; return"
+	nix-shell -A shells.ghc --command $(INIT-GHC-RET)
 else
 	$(error Already in GHC shell!)
 endif
@@ -82,11 +92,10 @@ shell-ghcjs :
 ifndef NIX_GHCJS
 	# @touch nix-shell-check
 	mkdir -p $(HDEPS)
-	nix-shell -A shells.ghcjs --command "ghcjs-pkg list | head -1 | xargs | xargs -I {} ln -sf {} $(HDEPS)/package.conf.d.ghcjs; ls -1 $(HDEPS)/package.conf.d.ghcjs | sort > $(HDEPS)/package.conf.d.ghcjs.txt; ghcjs-pkg list --simple-output | tr ' ' '\n' | sort > $(HDEPS)/ghcjs-all.txt; return"
+	nix-shell -A shells.ghcjs --command $(INIT-GHCJS-RET)
 else
 	$(error Already in GHCJS shell!)
 endif
-
 
 # # .PHONY : nix-shell-check
 # # nix-shell-check : project.nix $(PKG-NIX) nix/* nix-deps/*
@@ -165,3 +174,4 @@ clean-tags :
 .PHONY: clean-tmp
 clean-tmp :
 	rm -f  .ghc.environment.*
+
